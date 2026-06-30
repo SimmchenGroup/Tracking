@@ -1,0 +1,516 @@
+function [tr, RawResults, myangle, trajout] = particle_tracking_fct_angle2(filename,file)
+% Summary of this function goes here
+%   Detailed explanation goes here
+
+%% Particle Finder
+
+load('workspacevar.mat');
+
+% loop over images and find particle position
+    
+vr = VideoReader([file filename extension]);
+nFrames = fps*ceil(vr.Duration);
+
+
+PreviousPointer = 0;
+NumImages = nFrames;
+
+FilterInten = 1;
+ParticlesPerImage = 20;
+
+RawResults = zeros(ParticlesPerImage*NumImages,8);
+MajorMinorAxisLenght = zeros(ParticlesPerImage*NumImages,2);
+TotalParticles = 0;
+
+
+%% Quality-Check 
+
+if(CheckQuality~=0)
+writerObj = VideoWriter([file filename '_results\' '_QualityCheck'],'Motion JPEG AVI');
+writerObj.FrameRate = fps; 
+writerObj.Quality = 100; 
+open(writerObj);
+f = figure;
+set(f,'Visible','off');
+%set(gcf,'Position',[200,100,720,576]);%set the size of the output video
+%set(gcf,'Position',[200 100 a b]);%set the size of the output video
+end
+
+
+se = strel('disk',2);   
+se1 = strel('disk',20);
+mySE = ones(10);
+
+k = 0;
+time1 = 0;
+t1 = clock;  
+t2 = clock;
+k2 = k;
+
+while hasFrame(vr)
+    k = k+1;
+    
+%     time1 = etime(t2,t1);    
+%     if(time1>1)  
+%         k2 = k;
+%         disp([num2str(100*k/nFrames,3),' % Completed  Fps = ', num2str((k2-k1)/time1,3)])
+%         t1 = clock;
+%         k1 = k;
+%     else
+%         k1 = k2;        
+%     end
+%  
+    
+    img0 = readFrame(vr);
+    
+	    img1 =  rgb2gray(img0);
+
+    I = 255-img1;    
+ 
+    level = graythresh(I);
+
+    bw = imbinarize(I,level+0.08);
+    L = imfill(bw,'holes');    
+    s = regionprops(L, {'Area','Centroid', 'MajorAxisLength','MinorAxisLength'...
+        ,'Orientation','PixelIdxList',"BoundingBox"});
+        
+    % organize the data
+    pixelList = [];
+    %LittleOnes = [];
+    for ii = 1:length(s)
+            if (s(ii).MajorAxisLength / s(ii).MinorAxisLength > RatioMin && ...
+                    s(ii).MajorAxisLength / s(ii).MinorAxisLength < RatioMax &&...
+                    s(ii).MinorAxisLength <MaxShortAxis && s(ii).MajorAxisLength > MinLongAxis&&...
+                    s(ii).MinorAxisLength >MinShortAxis && s(ii).MajorAxisLength < MaxLongAxis&&...
+                    s(ii).Area>MinArea && s(ii).Area<MaxArea)
+              % filter the false detection
+               if (mean(I(s(ii).PixelIdxList))> FilterInten)
+                    TotalParticles = TotalParticles + 1;
+                    RawResults(TotalParticles,1:2) = s(ii).Centroid;
+                    RawResults(TotalParticles,3) = s(ii).MajorAxisLength/2;
+                    RawResults(TotalParticles,4) = s(ii).MinorAxisLength/2;
+                    RawResults(TotalParticles,5) = s(ii).Orientation;%/180*pi;
+					RawResults(TotalParticles,6) = k;
+                    RawResults(TotalParticles,8) = s(ii).Area;
+                    MajorMinorAxisLenght(TotalParticles,1) = s(ii).MajorAxisLength;
+                    MajorMinorAxisLenght(TotalParticles,2) = s(ii).MinorAxisLength;
+                    
+                    if k==1
+                    Center(ii,1) = s(ii).Centroid(1);
+                    Center(ii,2) = s(ii).Centroid(2);
+                    end
+
+%                     if (k == end_mean_flat_particle)
+%                          length_major = mean(RawResults(TotalParticles,3));
+%                          length_minor = mean(RawResults(TotalParticles,4));
+%                     end
+                    
+%                     if (k >= start_mean_moving_particle)
+%                     Angle_raw_minor(TotalParticles,1) = real(acos(RawResults(TotalParticles,4)/length_minor))*180/pi;
+%                     Angle_raw_major(TotalParticles,1) = real(acos(RawResults(TotalParticles,3)/length_major))*180/pi;
+%                     end
+                    
+                    pixelList = vertcat(pixelList,s(ii).PixelIdxList);
+               end             
+               
+            end            
+    end
+%% Switch for diffrent qualitychecks
+
+if length(pixelList) < 1
+    hallo =1;
+else 
+if(CheckQuality == 1)
+    
+   imshow(img0);
+   hold on
+   phi = linspace(0,2*pi,1000);
+   cosphi = cos(phi);
+   sinphi = sin(phi); 
+ 
+    x0 = RawResults(PreviousPointer+1:TotalParticles,1);
+    y0 = RawResults(PreviousPointer+1:TotalParticles,2);
+    DeltaX = RawResults(PreviousPointer+1:TotalParticles,3).*...
+      cos(RawResults(PreviousPointer+1:TotalParticles,5));
+    DeltaY = RawResults(PreviousPointer+1:TotalParticles,3).*...
+      sin(-RawResults(PreviousPointer+1:TotalParticles,5));
+    quiver(x0,y0,DeltaX,DeltaY,0,'g-','LineWidth',1.5);
+    quiver(x0,y0,-DeltaX,-DeltaY,0,'g-','LineWidth',1.5);
+    string = [num2str(k) ' of ' num2str(NumImages)];
+    text(20,30,string,'FontSize',14,'Color','Yellow'); 
+     frame = getframe;
+     writeVideo(writerObj,frame); 
+     hold off;
+elseif(CheckQuality == 2)
+    imshow(img0);
+    hold on
+    phi = RawResults(PreviousPointer+1:TotalParticles,5);
+    x0 = RawResults(PreviousPointer+1:TotalParticles,1);
+    y0 = RawResults(PreviousPointer+1:TotalParticles,2);
+    a = RawResults(PreviousPointer+1:TotalParticles,3);
+    b = RawResults(PreviousPointer+1:TotalParticles,4);
+    for j=1:length(x0)
+        ellipsedraw(a(j),b(j),x0(j),y0(j),-phi(j),'c-');
+    end
+    string = [num2str(k) ' of ' num2str(NumImages)];
+    text(20,30,string,'FontSize',14,'Color','Yellow'); 
+    frame = getframe;
+    writeVideo(writerObj,frame); 
+    hold off;
+elseif(CheckQuality == 3)
+    
+    boundary =[];
+    hold on
+    PL = L-L;
+    PL(pixelList)=1;  
+    [B,LL] = bwboundaries(PL,'noholes');
+   
+    
+    for j = 1:length(B)
+    boundary = cat(1,boundary,B{j});
+    end
+    zer = zeros(length(boundary),1);
+    n = insertShape(img0,'Circle',[boundary(:,2),boundary(:,1),zer],'Color','green','LineWidth',2);
+    string = [num2str(k) ' of ' num2str(NumImages)];
+    obj = insertText(n,[10,20],string,'FontSize',14);
+    
+    if k == 1
+        index = 1:size(Center,1);
+        obj = insertText(obj,Center,index','FontSize',14);
+    end
+    
+    writeVideo(writerObj,obj);
+    hold off
+
+end
+end    
+PreviousPointer = TotalParticles; 
+t2 = clock;
+end
+
+if(CheckQuality ~= 0)
+close(writerObj);
+close;
+end
+
+RawResults = RawResults(1:TotalParticles,:);
+%save([file filename '_Raw.mat'],'RawResults')
+
+
+%% Tracker
+
+%load ([filename '_Raw.mat'])
+TotalPoints = length(RawResults);
+
+NumImages = max(RawResults(:,6))-1;
+
+LostSteps = 8;
+
+% unchecked-->0; checked but not valid --> -1;
+RawResults(:,7) = 0;   % Add a column to record 
+% results
+tr = zeros(TotalPoints,8);
+%create a new matrix to record the tracking result
+
+StartIndex = 1;
+EndIndex = 1;
+%%%% construct the index map for times.
+for Time=1:NumImages
+    % Some frames do not include even one component,we must delete these
+    % frames
+    br=RawResults(:,6)==Time;
+    if(sum(br)==0)
+        continue;
+    end
+    
+    % find the start index
+    while(EndIndex<TotalPoints+1 && RawResults(EndIndex,6) ~= Time)
+           EndIndex = EndIndex + 1;
+    end  
+    StartIndex = EndIndex;
+    while(EndIndex<TotalPoints+1 && RawResults(EndIndex,6) == Time)
+           EndIndex = EndIndex + 1;
+    end
+    AllStartIndex(Time) = StartIndex;
+    AllEndIndex(Time) = EndIndex-1;  
+    
+    Time = Time + 1;
+end
+AllStartIndex(AllStartIndex==0)=[];
+AllEndIndex(AllEndIndex==0)=[];
+
+re_NumImages = numel(AllStartIndex);
+
+
+Time = 0;
+PointerForTr = 0;
+TrajNum = 0;
+
+while (Time<re_NumImages)     
+    Time = Time + 1;
+        if (mod(Time,1000) ==0)
+        disp(Time/re_NumImages*100);
+    end
+
+
+    % loop over all particles
+    for jj=AllStartIndex(Time):1:AllEndIndex(Time)
+        % checked? or finished searching?
+       StopSearch = 0;
+       if (RawResults(jj,7)==0 && StopSearch == 0)
+           % RawRwsult(jj,7)==0 is clear
+            
+            p1 = RawResults(jj,:); %All particles on current frame
+            
+            % update the output            
+            TrajNum = TrajNum + 1;
+            RawResults(jj,7) = TrajNum;
+            PointerForTr = PointerForTr + 1;            
+            tr(PointerForTr,:) = RawResults(jj,:);
+            
+            % Start search p1 in future frames            
+            SearchTime = Time + 1;
+            MissingSteps = 0;
+            while(StopSearch == 0 && SearchTime < re_NumImages)
+                    
+                p2 = RawResults(AllStartIndex(SearchTime):AllEndIndex(SearchTime),:);
+                   % emphasize displacement along                     
+                d_1 = (p2(:,1) - p1(1))*cos(p1(5)) - (p2(:,2) - p1(2))*sin(p1(5));
+                d_2 = (p2(:,1) - p1(1))*sin(p1(5)) + (p2(:,2) - p1(2))*cos(p1(5));%×ø±êÏµ±ä»»
+                dis = d_1.*d_1 + d_2.*d_2*4;
+                    
+% Tracking Condition                                        
+                    tt = find(abs(p2(:,3) - p1(3))/p1(3)<0.34 ...
+                    & dis<600 & p2(:,7)==0 );
+                                   
+                    if (length(tt) == 1) 
+                        % if ture,find the right one
+                        % update RawResults(AllStartIndex(SearchTime)
+                        tk = AllStartIndex(SearchTime) + tt-1;
+                        RawResults(tk,7) = TrajNum;
+                        % update the output
+                        PointerForTr = PointerForTr + 1;
+                        tr(PointerForTr,:) = RawResults(tk,:);
+                        % update SearchTime
+                        SearchTime = SearchTime + 1;
+                        % update p1
+                        p1 = RawResults(tk,:);                        
+                        % reset missing step
+                        if MissingSteps > 0
+                            MissingSteps = 0;
+                        end
+                    elseif (length(tt) > 1)
+                        % choose the minimal distance
+                        [Y kk] = min(dis(tt));                        
+                        tk = AllStartIndex(SearchTime) + tt(kk(1)) -1;
+                        % update RawResults(AllStartIndex(SearchTime)
+                        RawResults(tk,7) = TrajNum;
+                        % update the output
+                        PointerForTr = PointerForTr + 1;
+                        tr(PointerForTr,:) = RawResults(tk,:);                        
+                        % update SearchTime
+                        SearchTime = SearchTime + 1;                        
+                        % update p1
+                        p1 = RawResults(tk,:);                        
+                        % reset missing step
+                        if MissingSteps > 0
+                            MissingSteps = 0;
+                        end
+                    else
+                        % no finding
+                        MissingSteps = MissingSteps + 1;
+                        if MissingSteps < LostSteps
+                            % update SearchTime
+                            SearchTime = SearchTime + 1; 
+                        else                        
+                            StopSearch = 1;                            
+                        end
+                    end
+             end
+       end
+    end
+end
+
+tr = tr(1:PointerForTr,:);
+
+%save([file filename '_Rawtraj.mat'],'tr')
+
+disp('Tracking Complete!')
+
+%%fill the skipped steps in trajectories and compute velocity
+
+% before filling, I remove some positions based the size of ellipse.
+
+%Revised by LiuChang 20150502
+
+%allitems = whos;
+%for i=1:length(allitems)
+%    if(~strcmp('filename',allitems(i).name))
+%        clear(allitems(i).name) 
+%    end
+%end
+
+%load ([filename '_Rawtraj.mat']);
+NumberOfTraj = max(tr(:,7));
+TotalPoints = length(tr);
+% filled trajectories
+FilledTr = zeros(TotalPoints,11);
+SkipedParticles = zeros(TotalPoints,1);
+TotalSkip = 0;
+
+NewStartIndex = 1;%the first frame in the video must have a component
+NewEndIndex = 1;
+
+StartIndex = 1;
+EndIndex = 1;
+
+CutOffLength = 6;
+FWIN = 'hamming';
+F = [CutOffLength/2 CutOffLength/2];
+
+MaxDev = 20;
+
+for ii = 1:NumberOfTraj
+    while(tr(EndIndex,7) == ii && EndIndex < TotalPoints)
+        EndIndex = EndIndex + 1;
+    end
+    
+    traj = tr(StartIndex:EndIndex-1,1:5);%x,y,a,b,theta
+    trajout = tr(StartIndex:EndIndex-1,1:5);
+    traj_2 = tr(StartIndex:EndIndex-1,8); %Area, added for angle calculation
+    t = tr(StartIndex:EndIndex-1,6);%current posi on which frame in the video
+    
+    % filter the trajectories by bacteria size
+    LongAxis = traj(:,3);                   
+    myangle = traj(:,5);
+
+
+    if (std(LongAxis) > MaxDev)
+        LengthCut = MaxDev;
+    else
+        LengthCut = std(LongAxis);
+    end
+    
+    LengthCut = 50;  
+    ttkk = find(abs(LongAxis - mean(LongAxis)) < LengthCut);%filter noisy
+    traj = traj(ttkk,:);
+    t = t(ttkk);
+    % smooth the trajectories and do derivative
+%     if (length(ttkk)>5 && max(diff(t))<300)
+%         
+%         
+%         t_Min = t(1);
+%         t_Max = t(end);
+%         t_axis = t_Min:1:t_Max;
+%         NewEndIndex = NewStartIndex + t_Max-t_Min;
+%         FilledTr(NewStartIndex:NewEndIndex,1) = interp1(t,traj(:,1),t_axis,'spline');%fitting
+%         FilledTr(NewStartIndex:NewEndIndex,2) = interp1(t,traj(:,2),t_axis,'spline');
+%         FilledTr(NewStartIndex:NewEndIndex,3) = interp1(t,traj(:,3),t_axis,'spline');
+%         FilledTr(NewStartIndex:NewEndIndex,4) = interp1(t,traj(:,4),t_axis,'spline');
+%         FilledTr(NewStartIndex:NewEndIndex,11) =interp1(t,traj_2(:,1),t_axis,'spline');
+% %         FilledTr(NewStartIndex:NewEndIndex,5) = interp1(t,traj(:,5),t_axis,'spline');
+% %% Normalize the angles and do the interpolation
+%     O = traj(:,5);
+%     NO = zeros(length(O),1);
+%     for j=1:length(O)
+%         if(j==1)
+%             NO(j)=O(j);
+%         else
+%             if(abs(O(j)-O(j-1))<0.6*pi) 
+%                 NO(j)= NO(j-1)+O(j)-O(j-1);
+%             elseif(O(j-1)<0 && O(j)>0)
+%                 NO(j)= NO(j-1)-(pi-(O(j)-O(j-1)));
+%             elseif(O(j-1)>0 && O(j)<0)
+%                 NO(j)= NO(j-1)+(pi-(O(j-1)-O(j)));
+%             end
+%         end
+%     end              
+%         
+%         FilledTr(NewStartIndex:NewEndIndex,5) = NO;
+%         
+%         FilledTr(NewStartIndex:NewEndIndex,6) = t_axis;
+%         FilledTr(NewStartIndex:NewEndIndex,7) = ii;
+%         % interpolation
+%         
+%         XSmooth = ndnanfilter(FilledTr(NewStartIndex:NewEndIndex,1),FWIN,F);
+%         YSmooth = ndnanfilter(FilledTr(NewStartIndex:NewEndIndex,2),FWIN,F);
+%         phiSmooth = ndnanfilter(FilledTr(NewStartIndex:NewEndIndex,5),FWIN,F);
+%         
+%         FilledTr(NewStartIndex:NewEndIndex,8) = movingslope(XSmooth,2,1);%xvelocity
+%         FilledTr(NewStartIndex:NewEndIndex,9) = movingslope(YSmooth,2,1);%yvelocity
+%         FilledTr(NewStartIndex:NewEndIndex,10) = movingslope(phiSmooth,2,1);
+%         
+%         FilledTr(NewStartIndex:NewEndIndex,1) = XSmooth;
+%         FilledTr(NewStartIndex:NewEndIndex,2) = YSmooth;
+%         FilledTr(NewStartIndex:NewEndIndex,5) = phiSmooth;
+%         
+%         SkipedParticles(NewStartIndex:NewEndIndex) = TotalSkip;
+%         
+%         StartIndex = EndIndex;
+%         NewStartIndex  = NewEndIndex + 1;
+%         
+%     else
+%         StartIndex = EndIndex;
+%         TotalSkip = TotalSkip +1 ;
+%     end
+%     if (mod(ii,30) ==0)
+%         disp(ii/NumberOfTraj*100);
+%     end
+end
+% 
+% 
+% FilledTr(:,7) = FilledTr(:,7) - SkipedParticles;
+% tr = FilledTr(1:NewEndIndex,:);
+%save([file filename '_Traject.mat'],'tr')
+%save([file filename '_raw.mat'],'tr');
+%delete([file filename '_Rawtraj.mat']);
+
+%% Particle_Numbering
+
+if(particle_numbering == 1)
+    
+    vr_2 = VideoReader([file  filename '_results\' '_QualityCheck.avi']);
+    %load([file filename '_raw'])
+    
+    writerObj = VideoWriter([file filename '_results\' '_QualityCheck_Numbers'],'Motion JPEG AVI');
+    writerObj.FrameRate = fps;
+    writerObj.Quality = 100;
+    open(writerObj);
+    figure;
+    
+    frame_count = 0;
+    
+    while hasFrame(vr_2)
+        
+        img0 = readFrame(vr_2);
+        imshow(img0)
+        frame_count = frame_count + 1
+        
+        hold on
+        
+        for k = 1:length(tr)
+            if frame_count == tr(k,6)
+                t = text(tr(k,1),tr(k,2),int2str(tr(k,7)));
+                t.Color = 'g';
+                t.FontSize = 12;
+            end
+        end
+        
+        frame = getframe;
+        writeVideo(writerObj,frame);  
+        hold off
+        
+    end
+    
+    close(writerObj);
+    close;
+
+end
+
+%clearvars -except x filename failure tr RawResults myangle trajout
+%close all
+
+disp('Particletracking completed!')
+end
+
+
