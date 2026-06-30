@@ -1,0 +1,80 @@
+Loop to analyze all avi files in a specific folder
+clear all
+addpath(genpath(''))%Fill in path with all required functions (particle tracking function,
+%trackprocessing,...)
+allvdata = {};
+alltrackdata = {};
+
+Which folder?
+
+%mkdir (['Auswertungsdateien\'], [filename '_Auswertung'])                        %creates the folder for the data
+file = (['\']);       %creates the path to save the data, do not forget "\" at the end
+file_ex = file;
+
+addpath(genpath(file))
+extension = '.avi';
+
+
+%Add fps and Magnification or scale
+
+fps = 40
+Magnification = 63
+scale = (5.86*2/Magnification) 
+% scale = 0.19;                       %scalingfactor in micrometer/pixel
+
+minlength = 10; %minimum tracklength in frames
+vtresh = 200; %maximum velocity between two time steps in µm/s (tracks will be separated if larger)
+Do all avi files in that folder
+allfilenames = dir([file '*.avi']) %Finds all files ending on .avi
+Loop over files from x to xmax
+x = 1 %start with video 1
+while(x <= length(allfilenames)) %Go until last video
+    %try
+
+Filename ending with a number (without the number)
+    filename = allfilenames(x).name %Get filename of video
+    filename = filename(1:end-4) %remove .avi from filename
+Parameters for particle size - See https://de.mathworks.com/help/images/ref/regionprops.html
+    MinLongAxis = 6;                    %parameters to select particles to track 
+    MaxLongAxis = 35;                  %axis-parameters relate to an ellips with
+    MinShortAxis = 6;                   %same second momentum
+    MaxShortAxis = 35;                 %
+    RatioMax = 2;                       %ratio of the two axis
+    RatioMin = 1;                    %
+    MinArea = 70;                       %Area of the detected particle
+    MaxArea = 550;                      %
+Parameters of tracks                                
+    particle_numbering = 0;             %1 to produce Numberingvideo, 0 if not needed
+
+
+    %constant_length = 0;                %0 if particle is nearly a square
+                                        %length of the constant particlesite in
+                                        %pixel if it is not a square
+
+    CheckQuality = 3  ;                   %1 for quiver,2 for ellipse,3 for edge,0 for no checking - I recommend 3      
+Important: Functions will load workspacevar --> make sure old tr is not loaded again! --> tr has to be deleted
+    clear tr
+    save('workspacevar');   
+    mkdir ([file filename '_results'])
+
+Which tasks should be carried out?
+    % Call the function and capture the returned 'tr' variable
+   
+    [tr, RawResults, myangle, trajout] = particle_tracking_fct_angle2(filename, file);
+trackdata = {};
+    vdata = {};
+    [trackdata,vdata] = track_processing(tr, vtresh, minlength, fps, scale); %process tracks to a cell array
+   
+trackdata: 1 = x in pixels, 2 = y in pixels, 3 = frame, 4 = orientation
+vdata: 1-4 = differences from trackdata, 5 = speed in µm/s
+
+Collect all trackdata and vdata from all videos in cell array
+    alltrackdata = [alltrackdata,trackdata];
+    allvdata = [allvdata,vdata];
+ 
+    save([file filename '_results\' 'tracking.mat'],'tr', 'trackdata', 'vdata'); %save data for that video in one file 
+    x=x+1; %go to next video 
+end
+save files with alltracks (combined tracks from all videos)
+save([file mfilename '_alltrackings.mat'],'allvdata', 'alltrackdata');
+
