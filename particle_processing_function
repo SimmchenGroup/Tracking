@@ -1,0 +1,134 @@
+function [trackdata, vdata] = track_processing_area(tr, vtresh, minlength, fps, scale)
+    % Load workspace variables if needed
+    % load('workspacevar');
+
+    nTracks = max(tr(:,7)); % Number of tracks
+    trackdata = {};
+    
+    % Counts spots in each track
+    particlecounter = 1;
+    j = 1;
+    spotsintrack = zeros(length(tr),1);
+    
+    while particlecounter == tr(j,7) && j < length(tr)
+        while particlecounter == tr(j,7) && j < length(tr)
+            spotsintrack(particlecounter) = spotsintrack(particlecounter) + 1;
+            j = j + 1;
+        end
+        particlecounter = particlecounter + 1;
+    end
+    
+    spotsintrack = nonzeros(spotsintrack);
+    
+    % Separates the tracks longer than the minimum length into single arrays in a cell array
+    p = 1;
+    p2 = 1;
+    i = 1;
+    ii = 1;
+
+    while p == tr(i,7) && i < length(tr)
+        if spotsintrack(p) >= minlength
+            while p == tr(i,7) && i < length(tr)
+                % xdata{p}(ii) = tr(i,1);
+                % ydata{p}(ii) = tr(i,2);
+                % framedata{p}(ii) = tr(i,6);
+                % alphadata{p}(ii) = tr(i,5);
+                trackdata{p2}(ii,1) = tr(i,1); % x
+                trackdata{p2}(ii,2) = tr(i,2); % y
+                trackdata{p2}(ii,3) = tr(i,6); % t
+                trackdata{p2}(ii,4) = tr(i,5); % alpha
+                trackdata{p2}(ii,5) = tr(i,3); % major axis length
+                trackdata{p2}(ii,6) = tr(i,4); % minor axis length
+                trackdata{p2}(ii,7) = tr(i,8); % Area
+                
+                % Compute circularity if major and minor axis are provided
+                if trackdata{p2}(ii,5) > 0 && trackdata{p2}(ii,6) > 0
+                    circularity = 4 * pi * (trackdata{p2}(ii,5) * trackdata{p2}(ii,6)) / (trackdata{p2}(ii,5)^2 + trackdata{p2}(ii,6)^2);
+                    trackdata{p2}(ii,8) = circularity;
+                else
+                    trackdata{p2}(ii,8) = NaN; % Set NaN if axes lengths are zero or invalid
+                end
+                
+                i = i + 1;
+                ii = ii + 1;
+            end
+        else
+            while p == tr(i,7) && i < length(tr)
+                i = i + 1;
+            end
+        end
+        if spotsintrack(p) >= minlength
+            p2 = p2 + 1;
+        end
+        p = p + 1;
+        ii = 1;
+    end
+
+    % Calculate velocities and plot tracks
+    idx = 1;
+    vdata = {};
+    for idx = 1:length(trackdata)
+        vdata{idx}(:,1:4) = diff(trackdata{idx}(:,1:4));
+        vdata{idx}(:,5) = scale * fps * (sqrt(vdata{idx}(:,1).^2 + vdata{idx}(:,2).^2) ./ vdata{idx}(:,3));   
+    end
+
+    vdata = vdata(~cellfun('isempty', vdata)); % Deletes empty arrays in vdata 
+
+    % Find and delete tracks with very high velocity step
+    newidx = 1;
+    splitidx = 1;
+    vdata2 = vdata;
+    trackdata2 = trackdata;
+    maxv = zeros(length(vdata2), 1);
+
+    for kk = 1:length(vdata2) % Calculate max v all data
+        maxv(kk) = max(vdata2{kk}(:,5));
+    end
+    totalmaxv = max(maxv);
+
+    while totalmaxv > vtresh % Loop runs until no velocity between two time steps exceeds the velocity threshold
+        newidx = 1;
+        splitidx = 1;
+        vdata = vdata2; % New tracks are created in vdata2
+        trackdata = trackdata2;
+        while newidx <= length(vdata)
+            if max(vdata{newidx}(:,5)) > vtresh % Find positions with too high velocity
+                [~, maxindex] = max(vdata{newidx}(:,5));
+                if maxindex >= minlength && (length(vdata{newidx}(:,5)) - maxindex) >= minlength % Different action depending on length of track and position of high v
+                    vdata2{newidx} = vdata{newidx}(1:maxindex-1, :);
+                    vdata2{length(vdata) + splitidx} = vdata{newidx}(maxindex+1:end, :);
+                    trackdata2{newidx} = trackdata{newidx}(1:maxindex, :);
+                    trackdata2{length(trackdata) + splitidx} = trackdata{newidx}(maxindex+1:end, :);
+                    splitidx = splitidx + 1;
+                elseif maxindex >= minlength && (length(vdata{newidx}(:,5)) - maxindex) < minlength
+                    vdata2{newidx} = vdata{newidx}(1:maxindex-1, :);
+                    trackdata2{newidx} = trackdata{newidx}(1:maxindex, :);
+                elseif maxindex < minlength && (length(vdata{newidx}(:,5)) - maxindex) >= minlength
+                    vdata2{newidx} = vdata{newidx}(maxindex+1:end, :);
+                    trackdata2{newidx} = trackdata{newidx}(maxindex+1:end, :);
+                elseif maxindex < minlength && (length(vdata{newidx}(:,5)) - maxindex) < minlength
+                    vdata2{newidx} = [];
+                    trackdata2{newidx} = [];
+                else
+                    disp('error')
+                end
+            end
+            newidx = newidx + 1;
+            vdata2 = vdata2(~cellfun('isempty', vdata2)); % Deletes empty arrays in vdata 
+            trackdata2 = trackdata2(~cellfun('isempty', trackdata2)); % Deletes empty arrays in trackdata
+        end
+        maxv = [];
+        for kk = 1:length(vdata2) % Determine max v again
+            maxv(kk) = max(vdata2{kk}(:,5));
+        end
+        totalmaxv = max(maxv);
+    end
+
+    vdata = vdata2;
+    trackdata = trackdata2;
+
+    % Save results if needed
+    % save([file filename '_Auswertung\' 'vdata2.mat'], 'vdata');
+    % save([file filename '_Auswertung\' 'trackdata2.mat'], 'trackdata');
+end
+
